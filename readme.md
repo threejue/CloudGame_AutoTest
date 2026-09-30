@@ -94,11 +94,13 @@ Android ADB 设备之间切换，无需改动。
 │   │   └── test_boot_stability.py # 异常掉电启动稳定性（marker: manual）
 │   └── android/
 │       ├── __init__.py
-│       └── test_android_adb.py    # ADB 连接与内存读取（离线单测 + 真机集成）
+│       ├── test_android_adb.py        # ADB 连接与内存读取（离线单测 + 真机集成）
+│       └── test_android_stability.py  # 安卓重启稳定性 + 资源稳定性（真机集成）
 ├── utils/
 │   ├── __init__.py
 │   ├── plotter.py                 # CSV 采样写入 + 内存趋势图
 │   ├── boot_analyzer.py           # 启动黑匣子 + 变砖分级诊断
+│   ├── hdmi_signal_diag.py        # 显示器无信号源分层诊断 CLI
 │   └── diagnose_dead_device.py    # 死设备被动诊断 CLI
 ├── reports/                       # 每次运行生成 run_<时间戳>/ 子目录（不入版本库）
 ├── run.py                         # 统一入口：pytest + 自动出内存图
@@ -147,9 +149,11 @@ android:                # android 后端使用
 | 目的 | 命令 |
 |---|---|
 | 一键跑全套并出内存图（统一入口） | `python run.py` |
+| **只跑安卓**（不碰 Linux 流程） | `python run.py --platform android` |
+| **只跑 Linux**（不碰安卓） | `python run.py --platform linux` |
+| 跑安卓真机测试（含稳定性） | `python run.py --platform android --include-integration` |
 | 诊断无法开机的设备 | `python -m utils.diagnose_dead_device` |
 | 只跑某类用例 | `pytest test_cases/linux/test_health.py -v` |
-| Android 真机集成测试 | `pytest -m integration` |
 
 > Android 侧不再有独立 CLI 脚本：性能采集能力（CPU/内存/电池/设备属性）已收敛到
 > `core/adb_device.py` 的 `AdbDevice`，由用例或 `get_device('android')` 直接调用。
@@ -193,7 +197,22 @@ dev.close()
 **各自独立 Y 轴量程并围绕数据自适应**（不从 0 起），解决了「基数约 20 万 KB、
 波动仅几百 KB 时曲线被压成平线」的问题；空闲子图还会标注低内存阈值与安全余量。
 
-### 6.4 死设备诊断
+### 6.4 显示器无信号源诊断
+
+[utils/hdmi_signal_diag.py](utils/hdmi_signal_diag.py) 用于排查「显示器检测不到游戏机信号源」。
+通过串口逐层采集视频输出状态并分级定位根因：
+
+```
+python -m utils.hdmi_signal_diag
+```
+
+诊断从硬件到应用逐层下钻：DRM 驱动是否存在 → 连接器/HPD 检测 → EDID/DDC →
+输出使能/DPMS → 显示模式 → 帧缓冲 → 游戏进程。对**全志 TinaLinux** 等不走标准
+DRM connector 的平台，会自动探测厂商私有节点（`/sys/class/disp`、
+`/sys/devices/virtual/hdmi`）并专项诊断 HPD、HDMI 使能、EDID 等。报告末尾给出
+明确的「根因定位」和可执行的「下一步」。
+
+### 6.5 死设备诊断
 
 对无法开机的设备，跳过「启动游戏/软重启」前置（死设备无法响应命令），
 仅做：上电后被动抓取串口日志 → 自动分级：

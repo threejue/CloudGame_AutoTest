@@ -72,6 +72,32 @@ class AdbDevice(BaseDevice):
     def shell(self, cmd, timeout=None):
         return self.send_cmd(cmd, timeout=timeout)
 
+    # ---------- 重启与等待 ----------
+
+    def reboot(self):
+        """通过 adb reboot 重启设备（而非 shell reboot），更可靠。"""
+        rc, out, err = self._run(['reboot'], timeout=5)
+        logger.info("AdbDevice 已发送 reboot: %s", out or err)
+        return rc == 0
+
+    def wait_for_device(self, timeout=120):
+        """等待设备重新上线（adb get-state=device）。
+        reboot 后网络 ADB 不会自动重连，因此循环中会主动 adb connect。
+        :return: True 设备在 timeout 内上线且 boot_completed；False 超时。
+        """
+        import time
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            # 主动重连（reboot 后网络设备需要重新 adb connect）
+            self._run(['connect', self.serial], timeout=5)
+            rc, state, _ = self._run(['-s', self.serial, 'get-state'], timeout=3)
+            if rc == 0 and state.strip() == 'device':
+                boot = self.shell('getprop sys.boot_completed', timeout=3).strip()
+                if boot == '1':
+                    return True
+            time.sleep(2)
+        return False
+
     # ---------- 内存 ----------
 
     def get_meminfo(self):
@@ -143,6 +169,44 @@ class AdbDevice(BaseDevice):
             'Android版本': self.shell('getprop ro.build.version.release'),
             '序列号': self.shell('getprop ro.serialno'),
         }
+
+    # ---------- 压力测试 ----------
+
+    def stress_cpu_start(self, workers=None):
+        """启动 CPU 压力进程（yes > /dev/null）。
+        :param workers: 压力进程数，默认 = CPU 核心数
+        :return: 启动的进程数
+        """
+        if workers is None:
+            cores = self.shell('nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo').strip()
+            workers = int(cores) if cores.isdigit() else 4
+        # 用 sh -c 后台起多个 yes，避免依赖 stress 工具
+        self.shell(
+            f'for i in $(seq 1 {workers}); do yes > /dev/null & done')
+        logger.info("CPU 压力启动: %s 个 yes 进程", workers)
+        return workers
+
+    def stress_mem_start(self, size_mb, duration_sec=0):
+        """占用内存：向 /dev/shm 写入指定大小的文件。
+        :param size_mb: 占用内存大小(MB)
+        :param duration_sec: 0=持续占用直到 stop；>0=N 秒后自动释放
+        """
+        # 先清理可能残留的压力文件
+        self.shell('rm -f /dev/shm/cg_stress_mem 2>/dev/null')
+        if duration_sec > 0:
+            self.shell(
+                f'dd if=/dev/zero of=/dev/shm/cg_stress_mem bs=1M count={size_mb} '
+                f'2>/dev/null & sleep {duration_sec}; rm -f /dev/shm/cg_stress_mem &')
+        else:
+            self.shell(
+                f'dd if=/dev/zero of=/dev/shm/cg_stress_mem bs=1M count={size_mb} 2>/dev/null')
+        logger.info("内存压力启动: 占用 %s MB (%s)", size_mb,
+                    f"{duration_sec}s 后自动释放" if duration_sec else "持续")
+
+    def stress_stop(self):
+        """停止所有压力进程并释放内存。"""
+        self.shell('pkill -9 yes 2>/dev/null; rm -f /dev/shm/cg_stress_mem 2>/dev/null')
+        logger.info("压力测试已停止，已清理 yes 进程与 /dev/shm/cg_stress_mem")
 
     def close(self):
         self._run(['disconnect', self.serial])

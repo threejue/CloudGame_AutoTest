@@ -26,6 +26,23 @@ boot:
   game_bin: 'AnyGame'            # 游戏可执行文件名
 
 android:
-  host: '192.168.1.100'          # 安卓设备 IP（需设备端开启网络 ADB 调试）
+  host: '192.168.110.21'         # 安卓设备 IP（需设备端开启网络 ADB 调试）
   port: 5050                     # adb tcpip 端口
   adb_path: 'adb'                # adb 可执行文件（PATH 中或写绝对路径）
+  # 稳定性测试参数
+  boot_stability:
+    reboot_count: 3            # 重启次数
+    boot_timeout_sec: 180      # 每次重启后等待上线的超时
+  resource_stability:
+    sample_count: 20           # 采样次数
+    sample_interval_sec: 5     # 采样间隔
+    min_available_mem_kb: 200000  # 可用内存下限（KB）
+    max_cpu_usage: 95          # CPU 使用率上限（%）
+  # 压力测试参数
+  stress:
+    cpu_duration_sec: 30       # CPU 压力持续时间
+    mem_size_mb: 200           # 内存压力占用大小（MB）
+    mem_duration_sec: 30       # 内存压力持续时间
+    sample_interval_sec: 2     # 压力期间采样间隔
+    max_temp: 50               # 温度上限（°C）
+    min_available_mem_kb: 100000  # 压力期间可用内存下限（KB）

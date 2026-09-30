@@ -153,13 +153,11 @@ def real_device():
         pytest.skip('PATH 中找不到 adb，跳过真机集成测试')
 
     host, port = cfg['host'], int(cfg['port'])
-    # 先快速探测：完全没有设备在线时立即 skip，避免 connect 空等超时
-    if not _online_serials(adb_on_path):
-        pytest.skip(f'当前无任何 adb 设备在线（目标 {host}:{port}），跳过真机集成测试')
-
+    # 直接尝试连接（会执行 adb connect），不要求设备已在 adb devices 列表中
     dev = AdbDevice(host=host, port=port, adb_path=cfg['adb_path'])
     if not dev.connect():
-        pytest.skip(f'网络 ADB 设备 {host}:{port} 连接失败，跳过真机集成测试')
+        pytest.skip(f'网络 ADB 设备 {host}:{port} 连接失败（请确认设备在线、'
+                    f'已开启网络 ADB 并在屏幕上允许调试）')
     yield dev
     dev.close()
 
