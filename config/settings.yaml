@@ -46,3 +46,11 @@ android:
     sample_interval_sec: 2     # 压力期间采样间隔
     max_temp: 50               # 温度上限（°C）
     min_available_mem_kb: 100000  # 压力期间可用内存下限（KB）
+  # 画面监控参数
+  monitor:
+    target_package: ''         # 要监控的应用包名（留空则不采集帧延迟/FPS 明细）
+    duration_sec: 60           # 监控总时长
+    sample_interval_sec: 2     # 采样间隔
+    min_fps: 20                # 帧率下限（FPS）
+    max_latency_p95_ms: 100    # 帧延迟 p95 上限（ms）
+    max_total_drops: 50        # 监控期间总丢包上限（个）
