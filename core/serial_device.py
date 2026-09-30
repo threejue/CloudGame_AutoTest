@@ -4,12 +4,12 @@ import time
 
 import serial
 
-from .device_base import DeviceInterface, load_config
+from .device_base import BaseDevice, load_config
 
 logger = logging.getLogger(__name__)
 
 
-class SerialDevice(DeviceInterface):
+class SerialDevice(BaseDevice):
     """串口设备。读取策略：静默间隔判定输出结束 + 总超时兜底。"""
 
     def __init__(self, config=None):
@@ -25,7 +25,7 @@ class SerialDevice(DeviceInterface):
                                  rtscts=False, dsrdtr=False)
         time.sleep(2)
         self.ser.read_all()  # 清空历史缓冲区
-        print(f"✅ [SerialDevice] 设备已连接: {self.port}")
+        logger.info("SerialDevice 设备已连接: %s", self.port)
 
     def send_cmd(self, cmd):
         if not self.ser:
@@ -54,4 +54,4 @@ class SerialDevice(DeviceInterface):
         if self.ser:
             self.ser.close()
             self.ser = None
-            print("🔒 [SerialDevice] 串口已关闭")
+            logger.info("SerialDevice 串口已关闭")

@@ -1,4 +1,4 @@
-"""android.py / AdbDevice 的 ADB 连接与内存读取测试。
+"""AdbDevice 的 ADB 连接与内存读取测试。
 
 分两层：
 - 离线单测：mock adb 子进程返回，验证连接状态判定、shell 调用、
@@ -7,15 +7,14 @@
   设备不在线自动 skip；run.py 默认以 -m "not integration" 排除。
 
 运行：
-    pytest test_cases/test_android_adb.py                 # 离线单测（集成自动 skip）
-    pytest test_cases/test_android_adb.py -m integration  # 只跑真机集成（需先配好设备 IP）
+    pytest test_cases/android/test_android_adb.py                 # 离线单测（集成自动 skip）
+    pytest test_cases/android/test_android_adb.py -m integration  # 只跑真机集成
 """
 import shutil
 import subprocess
 
 import pytest
 
-from android import AndroidDevice
 from core.adb_device import AdbDevice
 from core.device_base import load_config
 
@@ -37,7 +36,7 @@ def adb_dev(monkeypatch):
     """构造 AdbDevice，adb 路径与所有子进程调用均被 mock。"""
     monkeypatch.setattr('core.adb_device.shutil.which',
                         lambda name: r'C:\tools\adb.exe')
-    return AdbDevice(host='10.0.0.1', port=5555)
+    return AdbDevice(host='10.0.0.1', port=5050)
 
 
 def test_adb_not_found_raises(monkeypatch):
@@ -106,7 +105,7 @@ def test_get_meminfo_parse(adb_dev):
 
 
 def test_memory_info_contract(adb_dev):
-    """get_memory_info 必须返回与 DeviceInterface 一致的 4 键契约，
+    """get_memory_info 必须返回与 BaseDevice 一致的 4 键契约，
     与串口后端结构对齐，上层 test_cases/utils 无需感知后端。"""
     adb_dev.shell = lambda cmd, timeout=None: (
         MEMINFO_SAMPLE if cmd == 'cat /proc/meminfo' else '')
@@ -158,7 +157,7 @@ def real_device():
     if not _online_serials(adb_on_path):
         pytest.skip(f'当前无任何 adb 设备在线（目标 {host}:{port}），跳过真机集成测试')
 
-    dev = AndroidDevice(host=host, port=port, adb_path=cfg['adb_path'])
+    dev = AdbDevice(host=host, port=port, adb_path=cfg['adb_path'])
     if not dev.connect():
         pytest.skip(f'网络 ADB 设备 {host}:{port} 连接失败，跳过真机集成测试')
     yield dev

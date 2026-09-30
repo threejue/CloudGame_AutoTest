@@ -1,7 +1,11 @@
+import csv
+import logging
+import os
+
 import pandas as pd
 import matplotlib.pyplot as plt
-import csv
-import os
+
+logger = logging.getLogger(__name__)
 
 
 MEMORY_CSV_HEADER = ['时间', '总内存(KB)', '已用(KB)', '空闲(KB)', '缓存(KB)']
@@ -27,7 +31,7 @@ def log_memory_sample(csv_path, sample):
                              sample['free'], sample['cache']])
         return True
     except Exception as e:
-        print(f"❌ 写入内存日志失败: {e}")
+        logger.error("写入内存日志失败: %s", e)
         return False
 
 
@@ -42,7 +46,7 @@ def draw_memory_chart(csv_path, output_path, min_free_kb=None):
     """
     # 1. 容错：检查文件是否存在
     if not os.path.exists(csv_path):
-        print(f"❌ 找不到数据文件：{csv_path}，请先运行采集脚本！")
+        logger.error("找不到数据文件：%s，请先运行采集脚本", csv_path)
         return False
 
     # 2. 读取CSV，解决中文乱码
@@ -52,12 +56,12 @@ def draw_memory_chart(csv_path, output_path, min_free_kb=None):
         try:
             df = pd.read_csv(csv_path, encoding='gbk')
         except Exception as e:
-            print(f"❌ 读取CSV失败：{e}")
+            logger.error("读取CSV失败：%s", e)
             return False
 
     # 3. 容错：检查列数是否足够
     if len(df.columns) < 4:
-        print(f"❌ CSV列数不足，无法解析内存数据。当前列数: {len(df.columns)}")
+        logger.error("CSV列数不足，无法解析内存数据。当前列数: %s", len(df.columns))
         return False
 
     # 4. 提取列
@@ -114,5 +118,5 @@ def draw_memory_chart(csv_path, output_path, min_free_kb=None):
     fig.savefig(output_path)
     plt.close(fig)
 
-    print(f"🎉 图表已生成：{output_path}")
+    logger.info("图表已生成：%s", output_path)
     return True

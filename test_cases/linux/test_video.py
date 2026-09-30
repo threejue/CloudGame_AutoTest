@@ -1,20 +1,16 @@
-import pytest
+import logging
 import re
-from core.device_controller import DeviceController
 
+import pytest
 
-# 复用测试配置
-@pytest.fixture(scope="module")
-def device():
-    dev = DeviceController()
-    dev.connect()
-    yield dev
-    dev.close()
+logger = logging.getLogger(__name__)
+
+# device fixture 由 test_cases/conftest.py 统一提供（含无硬件自动 skip）
 
 
 def test_video_stream_quality(device):
     """测试视频流质量（延迟与丢包率）"""
-    print("\n🎥 正在抓取视频流日志...")
+    logger.info("正在抓取视频流日志...")
 
     # 1. 抓取最后 100 行日志（避免卡死）
     res = device.send_cmd("tail -n 100 /tmp/anygame.log")
@@ -31,10 +27,10 @@ def test_video_stream_quality(device):
     max_delay = max([int(d) for d in delays])
     max_loss = max([int(l) for l in losses])
 
-    print(f"\n📊 视频流数据：最大平均延迟 = {max_delay}ms, 最大丢包率 = {max_loss}%")
+    logger.info("视频流数据：最大平均延迟 = %sms, 最大丢包率 = %s%%", max_delay, max_loss)
 
     # 5. 核心断言：延迟不超过 50ms，丢包率不超过 2%
     assert max_delay <= 50, f"❌ 延迟过高！最大延迟 {max_delay}ms，超过阈值 50ms"
     assert max_loss <= 2, f"❌ 丢包率过高！最大丢包 {max_loss}%，超过阈值 2%"
 
-    print("✅ 视频流质量达标！")
+    logger.info("视频流质量达标！")

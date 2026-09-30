@@ -1,22 +1,27 @@
 """Android 端设备实现：通过网络 ADB（adb connect host:port）操作设备。
 
 仅依赖外部 adb 可执行文件（platform-tools），不依赖任何第三方 Python 库。
-内存口径适配 Android：基类默认解析 BusyBox `free`，这里改用 /proc/meminfo，
-但对外仍返回与接口一致的 {'total','used','free','cache'} 契约。
+除 connect/send_cmd/close 三个原语外，还提供 Android 侧的性能采集能力：
+内存(/proc/meminfo)、CPU(/proc/stat)、电池(dumpsys battery)、设备属性(getprop)。
+内存口径适配 Android，但对外仍返回与基类一致的 {'total','used','free','cache'} 契约。
 """
+import logging
 import os
 import re
 import shutil
 import subprocess
+import time
 
-from .device_base import DeviceInterface, load_config
+from .device_base import BaseDevice, load_config
+
+logger = logging.getLogger(__name__)
 
 
-class AdbDevice(DeviceInterface):
+class AdbDevice(BaseDevice):
     def __init__(self, config=None, host=None, port=None, adb_path=None, timeout=10):
         cfg = (config or load_config()).get('android', {})
         self.host = host or cfg.get('host', '127.0.0.1')
-        self.port = int(port if port is not None else cfg.get('port', 5555))
+        self.port = int(port if port is not None else cfg.get('port', 5050))
         self.serial = f'{self.host}:{self.port}'
         self.timeout = timeout
 
@@ -48,24 +53,26 @@ class AdbDevice(DeviceInterface):
         if rc == 0 and ('connected to' in text or 'already connected' in text):
             rc2, state, _ = self._run(['-s', self.serial, 'get-state'])
             if rc2 == 0 and state.strip() == 'device':
-                print(f'✅ [AdbDevice] 已连接设备: {self.serial}')
+                logger.info("AdbDevice 已连接设备: %s", self.serial)
                 return True
-            print(f'❌ [AdbDevice] 已连接但设备状态异常（期望 device，'
-                  f'实际 {state or "?"!r}）。若为 unauthorized，请在设备屏幕上点"允许调试"。')
+            logger.error("AdbDevice 已连接但设备状态异常（期望 device，实际 %r）。"
+                         "若为 unauthorized，请在设备屏幕上点\"允许调试\"。", state or '?')
             return False
-        print(f'❌ [AdbDevice] adb connect 失败: {out or err}')
+        logger.error("AdbDevice adb connect 失败: %s", out or err)
         return False
 
     def send_cmd(self, cmd, timeout=None):
         """执行 adb shell 命令，返回 stdout 文本；失败返回空串。"""
         rc, out, err = self._run(['-s', self.serial, 'shell', cmd], timeout=timeout)
         if rc != 0 and err:
-            print(f'⚠️ adb shell 命令失败 [{cmd}]: {err}')
+            logger.warning("adb shell 命令失败 [%s]: %s", cmd, err)
         return out
 
     # shell 作为语义化别名，Android 侧调用更直观
     def shell(self, cmd, timeout=None):
         return self.send_cmd(cmd, timeout=timeout)
+
+    # ---------- 内存 ----------
 
     def get_meminfo(self):
         """解析 /proc/meminfo，返回 total/used/available/free/cache（KB）。"""
@@ -87,10 +94,56 @@ class AdbDevice(DeviceInterface):
         """覆盖基类：适配 Android 内存口径，但保持接口契约不变。"""
         info = self.get_meminfo()
         if info is None:
-            print("⚠️ 无法从 /proc/meminfo 解析出内存数据！")
+            logger.warning("无法从 /proc/meminfo 解析出内存数据")
             return None
         return {k: info[k] for k in ('total', 'used', 'free', 'cache')}
 
+    # ---------- CPU ----------
+
+    @staticmethod
+    def _parse_cpu_times(stat_text):
+        """解析 /proc/stat 首行，返回 (busy_jiffies, total_jiffies)。"""
+        m = re.search(r'^cpu\s+([\d\s]+)$', stat_text, re.M)
+        if not m:
+            return None
+        vals = [int(x) for x in m.group(1).split()]
+        idle = vals[3] + (vals[4] if len(vals) > 4 else 0)  # idle + iowait
+        total = sum(vals)
+        return total - idle, total
+
+    def get_cpu_usage(self, interval=1.0):
+        """两次采样 /proc/stat 做差，返回 CPU 使用率百分比；失败返回 None。"""
+        t1 = self._parse_cpu_times(self.shell('cat /proc/stat'))
+        time.sleep(interval)
+        t2 = self._parse_cpu_times(self.shell('cat /proc/stat'))
+        if not t1 or not t2:
+            return None
+        busy_delta = t2[0] - t1[0]
+        total_delta = t2[1] - t1[1]
+        return round(busy_delta * 100.0 / total_delta, 1) if total_delta > 0 else 0.0
+
+    # ---------- 电池 ----------
+
+    def get_battery(self):
+        """dumpsys battery，返回电量(%)与温度(°C)；无电池设备对应值为 None。"""
+        text = self.shell('dumpsys battery')
+        level_m = re.search(r'^\s*level:\s*(\d+)', text, re.M)
+        temp_m = re.search(r'^\s*temperature:\s*(\d+)', text, re.M)
+        return {
+            'level': int(level_m.group(1)) if level_m else None,
+            'temp': int(temp_m.group(1)) / 10.0 if temp_m else None,  # 0.1°C -> °C
+        }
+
+    # ---------- 设备信息 ----------
+
+    def get_props(self):
+        """读取常见设备属性。"""
+        return {
+            '型号': self.shell('getprop ro.product.model'),
+            'Android版本': self.shell('getprop ro.build.version.release'),
+            '序列号': self.shell('getprop ro.serialno'),
+        }
+
     def close(self):
         self._run(['disconnect', self.serial])
-        print(f'🔒 [AdbDevice] 已断开: {self.serial}')
+        logger.info("AdbDevice 已断开: %s", self.serial)

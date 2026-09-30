@@ -1,9 +1,13 @@
+import logging
 import serial
+import sys
 import time
 import re
 import os
 import yaml
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 def _load_device_config():
@@ -31,7 +35,7 @@ class BootAnalyzer:
         try:
             # 关键：打开串口，但不发送任何字符，防止打断 U-Boot
             ser = serial.Serial(self.port, self.baud, timeout=1, rtscts=False, dsrdtr=False)
-            print(f"\n📥 已连接串口 {self.port}，请立刻给设备重新上电...")
+            logger.info("已连接串口 %s，请立刻给设备重新上电...", self.port)
 
             start_time = time.time()
             boot_success = False
@@ -41,7 +45,9 @@ class BootAnalyzer:
                 if ser.in_waiting > 0:
                     data = ser.read(ser.in_waiting).decode('utf-8', errors='ignore')
                     self.log_content += data
-                    print(data, end='')  # 实时打印启动过程
+                    # 原始串口字节流透传到终端，不经日志格式化（避免拆行/加前缀）
+                    sys.stdout.write(data)
+                    sys.stdout.flush()
 
                     # 看到稳定的 shell 提示符（如 root@TinaLinux:/# ）才算启动成功。
                     # 必须匹配累积缓冲 self.log_content：提示符跨分块到达时不会漏判；
@@ -51,10 +57,22 @@ class BootAnalyzer:
                         break
                 time.sleep(0.1)
 
+            # 成功启动也保留基线日志；失败时的 crash 日志由 analyze_and_report 保存
+            if boot_success and self.log_content.strip():
+                default_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                           'reports')
+                save_dir = os.environ.get('CLOUDGAME_REPORT_DIR', default_dir)
+                os.makedirs(save_dir, exist_ok=True)
+                log_file = os.path.join(
+                    save_dir, f"boot_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+                with open(log_file, 'w', encoding='utf-8') as f:
+                    f.write(self.log_content)
+                logger.info("启动日志已保存至: %s", log_file)
+
             return boot_success
 
         except Exception as e:
-            print(f"❌ 串口打开/读取失败: {e}")
+            logger.error("串口打开/读取失败: %s", e)
             return False
         finally:
             # 读取中途异常（如设备拔出）也要保证串口释放，避免端口泄漏
@@ -63,8 +81,8 @@ class BootAnalyzer:
 
     def analyze_and_report(self):
         """分析日志并输出诊断结论"""
-        print("\n" + "=" * 50)
-        print("🩺 正在分析启动日志，生成诊断报告...")
+        logger.info("=" * 50)
+        logger.info("正在分析启动日志，生成诊断报告...")
 
         # 1. 毫无输出：硬件级故障
         if len(self.log_content.strip()) < 10:
@@ -94,14 +112,16 @@ class BootAnalyzer:
         else:
             conclusion = "⚠️ 未识别到已知崩溃特征，请人工检查完整日志。"
 
-        print(conclusion)
+        logger.info("诊断结论:\n%s", conclusion)
 
         # 保存完整日志供开发分析
-        report_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'reports')
+        # run.py 运行时使用当次时间戳报告目录，独立诊断时回退 reports/
+        default_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'reports')
+        report_dir = os.environ.get('CLOUDGAME_REPORT_DIR', default_dir)
         os.makedirs(report_dir, exist_ok=True)
         log_file = os.path.join(report_dir, f"boot_crash_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
         with open(log_file, 'w', encoding='utf-8') as f:
             f.write(self.log_content)
-        print(f"\n📄 完整启动日志已保存至: {log_file}")
+        logger.info("完整启动日志已保存至: %s", log_file)
 
         return conclusion

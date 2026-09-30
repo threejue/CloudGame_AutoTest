@@ -1,24 +1,26 @@
-import pytest
-import time
-from core.device_controller import DeviceController
-from utils.plotter import log_memory_sample
-import yaml
+import logging
 import os
+import time
+
+import pytest
+import yaml
+
+from utils.plotter import log_memory_sample
+from test_cases.conftest import report_dir
+
+logger = logging.getLogger(__name__)
 
 # 加载配置
-base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 with open(os.path.join(base_dir, 'config', 'settings.yaml'), 'r', encoding='utf-8') as f:
     config = yaml.safe_load(f)
 
-MEMORY_CSV = os.path.join(base_dir, config['paths']['log_csv'])
+# 报告目录：run.py 会创建 reports/run_<时间戳>/ 并通过环境变量传入；
+# 单独跑 pytest 时回退到 reports/
+_csv_dir = report_dir() or os.path.join(base_dir, 'reports')
+MEMORY_CSV = os.path.join(_csv_dir, 'device_memory_log.csv')
 
-
-@pytest.fixture(scope="module")
-def device():
-    dev = DeviceController()
-    dev.connect()
-    yield dev
-    dev.close()
+# device fixture 由 test_cases/conftest.py 统一提供（含无硬件自动 skip）
 
 
 def test_memory_health(device):
@@ -35,7 +37,7 @@ def test_memory_health(device):
     for i in range(count):
         info = device.get_memory_info()
         if not info:
-            print(f"⚠️ [{i + 1}/{count}] 解析失败，跳过")
+            logger.warning("[%s/%s] 解析失败，跳过", i + 1, count)
             continue
         log_memory_sample(MEMORY_CSV, {
             'time': time.strftime('%H:%M:%S'),
@@ -45,13 +47,13 @@ def test_memory_health(device):
             'cache': info['cache'],
         })
         free_values.append(info['free'])
-        print(f"[{i + 1}/{count}] 空闲内存: {info['free']} KB")
+        logger.info("[%s/%s] 空闲内存: %s KB", i + 1, count, info['free'])
         if i < count - 1:
             time.sleep(interval)
 
     assert free_values, "❌ 未采集到任何内存数据！"
     min_free = min(free_values)
-    print(f"\n本次采样 {len(free_values)} 次，最小空闲内存: {min_free} KB")
+    logger.info("本次采样 %s 次，最小空闲内存: %s KB", len(free_values), min_free)
     assert min_free > threshold, f"❌ 内存不足！警戒线: {threshold}KB，实测最小: {min_free}KB"
 
 
@@ -59,13 +61,13 @@ def test_device_uptime(device):
     """测试设备运行状态"""
     res = device.send_cmd("uptime")
     assert "up" in res, "❌ 无法获取系统运行时间！"
-    print(f"\n系统状态: {res.strip()}")
+    logger.info("系统状态: %s", res.strip())
 
 
 def test_boot_time(device):
     """测试设备重启并计算开机耗时"""
     import time
-    print("\n🔄 正在重启设备...")
+    logger.info("正在重启设备...")
     device.send_cmd("reboot")
 
     start_time = time.time()
@@ -81,4 +83,4 @@ def test_boot_time(device):
 
     boot_duration = int(time.time() - start_time)
     assert boot_success, "❌ 设备重启失败，可能变砖了！"
-    print(f"\n🎉 设备重启成功，耗时: {boot_duration} 秒")
+    logger.info("设备重启成功，耗时: %s 秒", boot_duration)

@@ -1,6 +1,6 @@
 """设备控制统一接口。
 
-所有设备后端（Linux 串口终端 / Android 网络 ADB …）都实现 DeviceInterface，
+所有设备后端（Linux 串口终端 / Android 网络 ADB …）都继承 BaseDevice，
 上层 test_cases / utils 只面向该接口编程，与具体传输方式解耦。
 """
 import abc
@@ -21,9 +21,14 @@ def load_config():
         return yaml.safe_load(f)
 
 
-class DeviceInterface(abc.ABC):
-    """设备统一接口。后端必须实现 connect / send_cmd / close 三个原语，
-    内存采集/重启等通用能力由本基类基于 send_cmd 提供（模板方法）。"""
+class BaseDevice(abc.ABC):
+    """设备抽象基类。后端必须实现 connect / send_cmd / close 三个原语，
+    内存采集/重启等通用能力由本基类基于 send_cmd 提供（模板方法）。
+
+    同时支持上下文管理器：
+        with get_device() as dev:
+            dev.send_cmd("uptime")
+    """
 
     @abc.abstractmethod
     def connect(self):
@@ -37,8 +42,17 @@ class DeviceInterface(abc.ABC):
 
     @abc.abstractmethod
     def close(self):
-        """释放连接资源（串口/ adb 连接等）。"""
+        """释放连接资源（串口 / adb 连接等）。"""
         raise NotImplementedError
+
+    # ---------- 上下文管理器 ----------
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
 
     # ---------- 通用能力（默认实现，子类可覆盖） ----------
 
@@ -54,7 +68,7 @@ class DeviceInterface(abc.ABC):
         res = self.send_cmd("free")
         match = re.search(r'Mem:\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)', res)
         if not match:
-            print("⚠️ 无法从 free 命令输出中解析出内存数据！")
+            logger.warning("无法从 free 命令输出中解析出内存数据")
             return None
         return {
             'total': int(match.group(1)),

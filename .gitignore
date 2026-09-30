@@ -30,7 +30,6 @@ dist/
 .DS_Store
 Thumbs.db
 
-# Generated reports (keep directory, ignore contents)
-reports/*.csv
-reports/*.png
-reports/*.txt
+# Generated reports（保留目录与 .gitkeep，忽略所有运行产物）
+reports/*
+!reports/.gitkeep
