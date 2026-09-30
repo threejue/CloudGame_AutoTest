@@ -13,11 +13,12 @@ paths:
   chart_png: 'memory_chart.png'
 
 sampling:
-  count: 20          # 采样次数
-  interval_sec: 5    # 每次间隔（秒）
+  interval_sec: 5    # 每次采样间隔（秒）
+  manual_stop: true  # true=持续采样直到手动按 Ctrl+C 结束；false=采样 max_samples 次后自动结束
+  max_samples: 0     # 采样次数安全上限：0=不限（仅手动结束）；无人值守时可设 >0 自动停
 
 thresholds:
-  min_free_memory_kb: 15000
+  min_free_memory_kb: 5000
   max_cpu_temp: 75
 
 boot:

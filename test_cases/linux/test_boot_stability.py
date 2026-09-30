@@ -8,7 +8,7 @@ import yaml
 from core.device_controller import get_device
 from core.device_base import load_config
 from utils.boot_analyzer import BootAnalyzer
-from test_cases.conftest import _serial_device_alive
+from test_cases.conftest import wait_for_serial_device
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ with open(os.path.join(base_dir, 'config', 'settings.yaml'), 'r', encoding='utf-
 def _require_serial_hardware():
     """manual 用例同样需要真实串口设备，无硬件时自动 skip 而非报错。"""
     cfg = load_config()
-    if cfg.get('platform', 'linux') != 'linux' or not _serial_device_alive(cfg):
+    if cfg.get('platform', 'linux') != 'linux' or not wait_for_serial_device(cfg):
         pytest.skip(f"串口 {cfg['device']['port']} 无应答设备，跳过启动稳定性用例")
 
 

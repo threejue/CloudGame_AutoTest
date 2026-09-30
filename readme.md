@@ -164,6 +164,12 @@ android:                # android 后端使用
 `memory_chart.png`，以及启动诊断产生的 `boot_log_*.txt` / `boot_crash_*.log`。
 多次运行产物互不覆盖。
 
+> **内存采样为手动结束**：`test_memory_health` 默认持续采样（间隔由
+> `sampling.interval_sec` 控制），在控制台按 **Ctrl+C** 结束采样，随后自动完成
+> 阈值断言并出图（KeyboardInterrupt 已在用例内部处理，不会中断后续用例）。
+> 无人值守场景可把 `sampling.manual_stop` 设为 `false` 或设置 `max_samples>0`
+> 作为自动停止的安全上限。
+
 ### 6.2 在代码中获取设备
 
 ```python
@@ -245,7 +251,7 @@ pytest -m integration                                   # 真机集成（设备�
 | `platform` | `linux` / `android` | 设备后端选择（`serial` 作为 `linux` 历史别名仍可用） |
 | `device` | `port` `baud` `timeout` `read_idle_sec` | 串口参数、命令总超时、静默判定结束时间 |
 | `paths` | `log_csv` `chart_png` | 时间戳报告目录内的 CSV 与图表文件名 |
-| `sampling` | `count` `interval_sec` | 内存采样次数与间隔 |
+| `sampling` | `interval_sec` `manual_stop` `max_samples` | 采样间隔；`manual_stop=true` 时持续采样直到控制台按 **Ctrl+C** 手动结束；`max_samples>0` 为采样次数安全上限（0=不限，无人值守时可设 >0 自动停） |
 | `thresholds` | `min_free_memory_kb` `max_cpu_temp` | 空闲内存告警阈值（CPU 温度阈值预留） |
 | `boot` | `game_dir` `game_bin` | 启动稳定性测试的游戏路径（**需改成真实路径**） |
 | `android` | `host` `port` `adb_path` | ADB 连接参数 |

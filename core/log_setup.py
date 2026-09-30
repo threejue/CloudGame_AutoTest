@@ -1,7 +1,7 @@
 """统一日志配置。
 
 约定：各业务模块只使用 logger = logging.getLogger(__name__)，
-不自行调用 logging.basicConfig；日志在入口（run.py / android.py /
+不自行调用 logging.basicConfig；日志在入口（run.py /
 diagnose_dead_device.py）调用 setup_logging() 统一配置。
 pytest 运行时则由 pytest.ini 的 log_cli_* 选项管理输出。
 """
@@ -13,6 +13,15 @@ _CONFIGURED = False
 
 DEFAULT_FORMAT = '%(asctime)s %(levelname)-7s %(name)s: %(message)s'
 DEFAULT_DATEFMT = '%H:%M:%S'
+
+
+class _PytestAwareFilter(logging.Filter):
+    """pytest 执行用例期间（PYTEST_CURRENT_TEST 被设置）抑制我们自己的
+    console handler，避免与 pytest log_cli 的实时输出重复（每条日志打两遍）。
+    测试开始前的启动横幅、以及非 pytest 入口不受影响。"""
+
+    def filter(self, record):
+        return not os.environ.get('PYTEST_CURRENT_TEST')
 
 
 def setup_logging(level=logging.INFO, log_file=None, fmt=DEFAULT_FORMAT):
@@ -29,6 +38,7 @@ def setup_logging(level=logging.INFO, log_file=None, fmt=DEFAULT_FORMAT):
     if not _CONFIGURED:
         console = logging.StreamHandler(sys.stderr)
         console.setFormatter(logging.Formatter(fmt, DEFAULT_DATEFMT))
+        console.addFilter(_PytestAwareFilter())
         root.addHandler(console)
         _CONFIGURED = True
 

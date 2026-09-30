@@ -64,11 +64,14 @@ def draw_memory_chart(csv_path, output_path, min_free_kb=None):
         logger.error("CSV列数不足，无法解析内存数据。当前列数: %s", len(df.columns))
         return False
 
-    # 4. 提取列
+    # 4. 提取列。X 轴用整数位置，时间字符串只作为刻度标签，
+    #    避免 matplotlib 把 HH:MM:SS 当分类轴（categorical units 警告）
     time_col = df.columns[0]
     used_col = df.columns[2]
     free_col = df.columns[3]
-    x, used, free = df[time_col], df[used_col], df[free_col]
+    labels = df[time_col].astype(str).tolist()
+    used, free = df[used_col], df[free_col]
+    x = list(range(len(labels)))
 
     # 5. 上下两个子图共享 X 轴，各自独立 Y 量程
     fig, (ax_used, ax_free) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
@@ -111,7 +114,10 @@ def draw_memory_chart(csv_path, output_path, min_free_kb=None):
     ax_free.grid(True, alpha=0.3)
     ax_free.legend(loc='upper right', fontsize=8)
 
-    plt.setp(ax_free.get_xticklabels(), rotation=45, ha='right')
+    # 采样点较多时抽稀刻度，避免时间标签重叠
+    tick_step = max(1, len(labels) // 12)
+    ax_free.set_xticks(x[::tick_step])
+    ax_free.set_xticklabels(labels[::tick_step], rotation=45, ha='right')
     fig.tight_layout()
 
     # 6. 保存图片（使用传入的参数），并关闭画布释放内存
