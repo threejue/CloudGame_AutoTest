@@ -1,7 +1,11 @@
+# 设备后端选择：serial(Linux 串口/pyserial) 或 android(网络 ADB)
+platform: 'serial'
+
 device:
   port: 'COM3'
   baud: 115200
-  timeout: 1
+  timeout: 2          # 单条命令读取的总超时（秒），防止设备无响应时死等
+  read_idle_sec: 0.4  # 串口静默多久（秒）认为本条命令输出结束
 
 paths:
   log_csv: 'reports/device_memory_log.csv'
@@ -18,3 +22,10 @@ thresholds:
 boot:
   game_dir: '/your_game_path'   # TODO: 改为真实游戏目录
   game_bin: 'AnyGame'            # 游戏可执行文件名
+
+android:
+  host: '192.168.1.100'          # 安卓设备 IP（需设备端开启网络 ADB 调试）
+  port: 5050                     # adb tcpip 端口
+  adb_path: 'adb'                # adb 可执行文件（PATH 中或写绝对路径）
+  sample_count: 20               # 性能采样次数
+  sample_interval: 5             # 采样间隔（秒）

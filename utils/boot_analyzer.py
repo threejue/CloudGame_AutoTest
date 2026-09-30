@@ -2,11 +2,24 @@ import serial
 import time
 import re
 import os
+import yaml
 from datetime import datetime
 
 
+def _load_device_config():
+    """从 config/settings.yaml 读取 device 配置（port/baud）。"""
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(base_dir, 'config', 'settings.yaml'), 'r', encoding='utf-8') as f:
+        return yaml.safe_load(f)['device']
+
+
 class BootAnalyzer:
-    def __init__(self, port='COM3', baud=115200, timeout=60):
+    def __init__(self, port=None, baud=None, timeout=60):
+        # port/baud 未显式传入时回退到配置文件，避免硬编码 COM3
+        if port is None or baud is None:
+            cfg = _load_device_config()
+            port = port if port is not None else cfg['port']
+            baud = baud if baud is not None else cfg['baud']
         self.port = port
         self.baud = baud
         self.timeout = timeout  # 最大等待启动时间（秒）
@@ -14,6 +27,7 @@ class BootAnalyzer:
 
     def capture_boot_log(self):
         """被动抓取设备上电后的启动日志"""
+        ser = None
         try:
             # 关键：打开串口，但不发送任何字符，防止打断 U-Boot
             ser = serial.Serial(self.port, self.baud, timeout=1, rtscts=False, dsrdtr=False)
@@ -37,12 +51,15 @@ class BootAnalyzer:
                         break
                 time.sleep(0.1)
 
-            ser.close()
             return boot_success
 
         except Exception as e:
-            print(f"❌ 串口打开失败: {e}")
+            print(f"❌ 串口打开/读取失败: {e}")
             return False
+        finally:
+            # 读取中途异常（如设备拔出）也要保证串口释放，避免端口泄漏
+            if ser is not None and ser.is_open:
+                ser.close()
 
     def analyze_and_report(self):
         """分析日志并输出诊断结论"""
